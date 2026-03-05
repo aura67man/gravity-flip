@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Gravity Flip</title>
+  <style>
+    body { margin:0; background:#0b0c1a; overflow:hidden; font-family:system-ui, Arial, sans-serif; }
+    canvas { display:block; margin:auto; background:#0f1126; border-radius:14px; border:1px solid rgba(255,255,255,.08); }
+  </style>
+</head>
+<body>
+<canvas id="game" width="900" height="520"></canvas>
+
+<script>
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+
+const railPad = 26;          // distance from edge where the "rails" are
+const player = { x: 120, y: 0, vy: 0, size: 22 };
+let gravity = 0.55;          // positive pulls down, negative pulls up
+let obstacles = [];
+let score = 0;
+let gameOver = false;
+
+let spawnTimer = 0;
+let spawnEvery = 1.05;       // seconds (gets harder)
+
+function reset(){
+  player.y = canvas.height/2;
+  player.vy = 0;
+  gravity = 0.55;
+  obstacles = [];
+  score = 0;
+  gameOver = false;
+  spawnTimer = 0;
+  spawnEvery = 1.05;
+}
+
+function flipGravity(){
+  if (gameOver) return;
+  gravity *= -1;
+}
+
+addEventListener("keydown", (e)=>{
+  if (e.code === "Space") flipGravity();
+  if ((e.key === "r" || e.key === "R") && gameOver) reset();
+});
+
+// Spawn an obstacle that travels horizontally from right to left.
+// It spawns on the TOP rail or BOTTOM rail, with a small opening window in the middle early on.
+function spawnObstacle(){
+  const onTop = Math.random() < 0.5;
+
+  const y = onTop ? railPad : (canvas.height - railPad - 22);
+  const baseSpeed = 260 + Math.min(240, score * 3); // ramps with score
+  const size = 22;
+
+  obstacles.push({
+    x: canvas.width + 40,
+    y,
+    vx: -baseSpeed,
+    size
+  });
+}
+
+function stickToRails(){
+  // When pulled down, stick to bottom rail. When pulled up, stick to top rail.
+  const topY = railPad;
+  const bottomY = canvas.height - railPad - player.size;
+
+  // apply gravity
+  player.vy += gravity;
+  player.y += player.vy;
+
+  if (gravity > 0) {
+    // pulled down -> clamp to bottom rail
+    if (player.y > bottomY) { player.y = bottomY; player.vy = 0; }
+    if (player.y < topY) { player.y = topY; } // safety
+  } else {
+    // pulled up -> clamp to top rail
+    if (player.y < topY) { player.y = topY; player.vy = 0; }
+    if (player.y > bottomY) { player.y = bottomY; } // safety
+  }
+}
+
+function rectHit(a,b){
+  return a.x < b.x + b.size &&
+         a.x + a.size > b.x &&
+         a.y < b.y + b.size &&
+         a.y + a.size > b.y;
+}
+
+let last = performance.now();
+function loop(now){
+  const dt = Math.min(0.033, (now - last) / 1000);
+  last = now;
+
+  if (!gameOver){
+    // score climbs over time
+    score += dt * 10;
+
+    // difficulty: spawn faster over time
+    spawnEvery = Math.max(0.45, 1.05 - score * 0.01);
+
+    // update player
+    stickToRails();
+
+    // spawn obstacles
+    spawnTimer += dt;
+    if (spawnTimer >= spawnEvery){
+      spawnTimer = 0;
+      spawnObstacle();
+      // sometimes spawn a second quickly (later game)
+      if (score > 35 && Math.random() < 0.25) setTimeout(spawnObstacle, 140);
+    }
+
+    // update obstacles
+    for (const o of obstacles) o.x += o.vx * dt;
+    obstacles = obstacles.filter(o => o.x > -80);
+
+    // collisions
+    const pRect = { x: player.x, y: player.y, size: player.size };
+    for (const o of obstacles){
+      if (rectHit(pRect, o)){
+        gameOver = true;
+        break;
+      }
+    }
+  }
+
+  draw();
+  requestAnimationFrame(loop);
+}
+
+function draw(){
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+
+  // rails
+  ctx.globalAlpha = 0.6;
+  ctx.fillStyle = "rgba(134,247,255,0.18)";
+  ctx.fillRect(0, railPad-6, canvas.width, 2);
+  ctx.fillRect(0, canvas.height-railPad+4, canvas.width, 2);
+  ctx.globalAlpha = 1;
+
+  // player
+  ctx.fillStyle = "#3cffd0";
+  ctx.fillRect(player.x, player.y, player.size, player.size);
+
+  // obstacles
+  ctx.fillStyle = "#ff4a6a";
+  for (const o of obstacles) ctx.fillRect(o.x, o.y, o.size, o.size);
+
+  // UI
+  ctx.fillStyle = "rgba(255,255,255,0.9)";
+  ctx.font = "18px system-ui, Arial";
+  ctx.fillText("Score: " + Math.floor(score), 16, 28);
+  ctx.font = "14px system-ui, Arial";
+  ctx.fillText("Space = flip • R = restart", 16, 48);
+
+  if (gameOver){
+    ctx.fillStyle = "rgba(10,12,18,0.7)";
+    ctx.fillRect(0,0,canvas.width,canvas.height);
+
+    ctx.fillStyle = "white";
+    ctx.font = "48px system-ui, Arial";
+    ctx.fillText("GAME OVER", canvas.width/2 - 160, canvas.height/2 - 20);
+
+    ctx.font = "18px system-ui, Arial";
+    ctx.fillText("Press R to restart", canvas.width/2 - 80, canvas.height/2 + 20);
+  }
+}
+
+reset();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
